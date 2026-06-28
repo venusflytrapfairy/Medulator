@@ -63,15 +63,7 @@ No unsupported or untraceable medical statements are generated.
 
 ---
 
-### 3. Interactive Document Viewer
-- Page-by-page PDF rendering
-- Highlighted citations from AI responses
-- Click-to-jump navigation from chat and analysis panels
-- Cross-linked evidence tracing
-
----
-
-### 4. AI Chat Assistant
+### 3. AI Chat Assistant
 Users can ask natural language questions such as:
 
 - “What does this diagnosis mean?”
@@ -79,13 +71,12 @@ Users can ask natural language questions such as:
 - “Are there any risks mentioned in the reports?”
 
 The assistant:
-- Uses only selected documents  
 - Provides grounded, cited responses  
 - Links directly to source text in documents  
 
 ---
 
-### 5. Symptom Relationship Graph
+### 4. Symptom Relationship Graph
 A dynamic visual graph showing relationships between:
 
 - Diagnoses  
@@ -100,7 +91,7 @@ Edges represent possible clinical relationships such as:
 
 ---
 
-### 6. Medical Timeline Generator
+### 5. Medical Timeline Generator
 Automatically reconstructs a chronological patient journey:
 
 - Diagnoses over time  
@@ -112,7 +103,7 @@ Each event is linked to its source document.
 
 ---
 
-### 7. Lifestyle Action Planner (Agentic Module)
+### 6. Lifestyle Action Planner (Agentic Module)
 Generates structured, educational lifestyle guidance based on extracted findings:
 
 - Nutrition guidance  
@@ -127,7 +118,7 @@ Each recommendation includes:
 
 ---
 
-### 8. Google Calendar Integration (Frontend-Based)
+### 8. Google Calendar Integration
 Users can convert health-related actions into calendar events:
 
 - Follow-up reminders  
