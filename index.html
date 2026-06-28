@@ -1,0 +1,987 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MeduLator AI</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- PDF.js for text extraction -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    
+    <!-- Vis-Network for Symptom Graph -->
+    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    
+    <!-- Markdown-it for Chat rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/markdown-it@13.0.1/dist/markdown-it.min.js"></script>
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        medical: {
+                            50: '#f0fdfa',
+                            100: '#ccfbf1',
+                            500: '#14b8a6',
+                            600: '#0d9488',
+                            700: '#0f766e',
+                            900: '#134e4a',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+        /* API Key Glow Effects */
+        .api-glow-red { box-shadow: 0 0 8px 2px rgba(239, 68, 68, 0.5); border-color: #ef4444 !important; }
+        .api-glow-green { box-shadow: 0 0 8px 2px rgba(16, 185, 129, 0.5); border-color: #10b981 !important; }
+
+        /* Markdown Styles */
+        .prose p { margin-bottom: 0.75em; }
+        .prose ul { list-style-type: disc; padding-left: 1.5em; margin-bottom: 0.75em; }
+        .prose strong { font-weight: 600; color: #1e293b; }
+
+        /* Citation Badge */
+        .citation-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background-color: #e0f2fe;
+            color: #0369a1;
+            font-size: 0.7rem;
+            font-weight: 700;
+            padding: 0 4px;
+            border-radius: 4px;
+            margin: 0 2px;
+            cursor: pointer;
+            border: 1px solid #bae6fd;
+            transition: all 0.2s;
+            vertical-align: super;
+        }
+        .citation-badge:hover {
+            background-color: #bae6fd;
+            transform: scale(1.1);
+        }
+
+        /* Document Page Simulation */
+        .doc-page {
+            background: white;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            margin: 0 auto 2rem auto;
+            padding: 3rem;
+            max-width: 800px;
+            min-height: 1000px;
+            font-family: 'Georgia', serif;
+            line-height: 1.6;
+            color: #333;
+            position: relative;
+        }
+
+        mark { background-color: #fef08a; padding: 2px; border-radius: 2px; font-weight: 500; }
+        
+        /* Vertical Tab Styles */
+        .tab-btn { color: #64748b; border: 1px solid transparent; }
+        .tab-btn:hover:not(.tab-active) { background-color: #f1f5f9; color: #334155; }
+        .tab-active { background-color: #f0fdfa; color: #0d9488; font-weight: 600; box-shadow: inset 4px 0 0 0 #0d9488; }
+        
+        /* Loading Spinner */
+        .loader {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #0d9488;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        #graph-container { height: 100%; width: 100%; outline: none; }
+    </style>
+</head>
+<body class="h-screen flex flex-col bg-slate-50 text-slate-800 font-sans overflow-hidden">
+
+    <!-- Top Header -->
+    <header class="bg-white border-b border-slate-200 h-16 flex items-center justify-between px-6 shrink-0 z-10 shadow-sm">
+        <div class="flex items-center gap-3">
+            <div class="bg-medical-600 text-white p-1.5 rounded-lg">
+                <i data-lucide="activity" class="w-6 h-6"></i>
+            </div>
+            <h1 class="text-xl font-bold text-slate-800 tracking-tight">MeduLator <span class="text-medical-600">LLM</span></h1>
+            <span class="ml-2 text-xs font-medium px-2 py-1 bg-slate-100 text-slate-500 rounded-full border border-slate-200">Multi-Specialist Report Analyzer</span>
+        </div>
+        
+        <div class="flex items-center gap-4">
+            <div class="relative flex items-center">
+                <i data-lucide="key" class="absolute left-3 w-4 h-4 text-slate-400"></i>
+                <input type="password" id="api-key-input" placeholder="Enter Gemini API Key" 
+                    class="pl-9 pr-4 py-1.5 text-sm border border-slate-300 rounded-md bg-slate-50 focus:outline-none focus:ring-2 focus:ring-medical-500 w-64 transition-shadow transition-colors duration-300"
+                    onchange="saveApiKey(this.value)">
+                <div id="api-status" class="w-2.5 h-2.5 rounded-full bg-slate-300 ml-3" title="API Status"></div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Workspace -->
+    <main class="flex-1 flex overflow-x-auto overflow-y-hidden">
+        
+        <!-- Left Sidebar: Document Management -->
+        <aside class="w-64 lg:w-72 bg-white border-r border-slate-200 flex flex-col shrink-0 z-30 relative">
+            <div class="p-4 border-b border-slate-100">
+                <h2 class="text-sm font-semibold text-slate-800 mb-3 flex items-center gap-2">
+                    <i data-lucide="folder-open" class="w-4 h-4 text-medical-600"></i> Patient Records
+                </h2>
+                <div class="relative">
+                    <input type="file" id="file-upload" multiple accept=".pdf,.txt" class="hidden" onchange="handleFileUpload(event)">
+                    <button onclick="document.getElementById('file-upload').click()" class="w-full bg-medical-50 hover:bg-medical-100 text-medical-700 border border-medical-200 py-2 px-4 rounded-md text-sm font-medium transition-colors flex items-center justify-center gap-2">
+                        <i data-lucide="upload-cloud" class="w-4 h-4"></i> Upload Documents
+                    </button>
+                    <p class="text-[10px] text-slate-400 text-center mt-2">Supports PDF, TXT</p>
+                </div>
+            </div>
+
+            <div class="flex-1 overflow-y-auto p-2" id="document-list">
+                <!-- Document Items populated by JS -->
+                <div class="text-center text-slate-400 text-sm mt-10 px-4">
+                    <i data-lucide="file-question" class="w-8 h-8 mx-auto mb-2 opacity-50"></i>
+                    No documents uploaded yet.
+                </div>
+            </div>
+
+            <div class="p-4 border-t border-slate-100 bg-slate-50 flex justify-between items-center text-xs text-slate-500">
+                <span id="doc-count">0 Documents</span>
+                <span id="page-count">0 Total Pages</span>
+            </div>
+        </aside>
+
+        <!-- Center Workspace: AI Specialist Panel -->
+        <aside class="w-[320px] lg:w-[400px] bg-white border-r border-slate-200 flex flex-col shrink-0 shadow-[4px_0_15px_-3px_rgba(0,0,0,0.05)] z-20 relative">
+            <div class="p-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
+                <h2 class="text-sm font-bold text-slate-800 flex items-center gap-2">
+                    <i data-lucide="users" class="w-4 h-4 text-medical-600"></i> Specialist Panel
+                </h2>
+                <button id="btn-analyze" onclick="runAnalysis()" class="bg-slate-800 hover:bg-slate-900 text-white px-4 py-1.5 rounded-md text-sm font-medium transition-colors shadow-sm disabled:opacity-50 flex items-center gap-2">
+                    <i data-lucide="zap" class="w-3.5 h-3.5"></i> Analyze
+                </button>
+            </div>
+            
+            <div id="analysis-loading" class="hidden flex-col items-center justify-center p-10 space-y-4">
+                <div class="loader"></div>
+                <p class="text-sm text-slate-500 font-medium animate-pulse" id="loading-text">Specialists reviewing documents...</p>
+            </div>
+
+            <div id="analysis-results" class="flex-1 overflow-y-auto p-4 space-y-6 hidden bg-slate-50">
+                <!-- Patient Snapshot -->
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+                    <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Patient Snapshot</h3>
+                    <div class="space-y-3" id="panel-snapshot"></div>
+                </div>
+
+                <!-- Risk Overview -->
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4" id="panel-risk"></div>
+
+                <!-- Specialists -->
+                <div class="space-y-4" id="panel-specialists"></div>
+
+                <!-- Consensus -->
+                <div class="bg-medical-50 rounded-xl shadow-sm border border-medical-100 p-4">
+                    <h3 class="text-xs font-bold text-medical-800 uppercase tracking-wider mb-3">Multidisciplinary Consensus</h3>
+                    <div id="panel-consensus" class="text-sm text-slate-700 space-y-2"></div>
+                </div>
+            </div>
+            
+            <div id="analysis-placeholder" class="flex-1 flex flex-col items-center justify-center text-center p-6 opacity-60">
+                <i data-lucide="microscope" class="w-16 h-16 text-slate-300 mb-4"></i>
+                <p class="text-sm text-slate-500">Upload documents and click <b>Analyze</b> to simulate a multidisciplinary clinical review.</p>
+            </div>
+        </aside>
+
+        <!-- Right Workspace: Viewer & Interactives -->
+        <section class="flex-1 flex flex-row min-w-[360px] bg-slate-50 relative z-10">
+            <!-- Vertical Tabs -->
+            <nav class="w-20 bg-white border-r border-slate-200 flex flex-col items-center py-4 gap-2 shrink-0 z-10 shadow-sm">
+                <button onclick="switchTab('viewer')" id="tab-viewer" class="tab-btn tab-active flex flex-col items-center justify-center w-16 h-16 rounded-xl gap-1 transition-all">
+                    <i data-lucide="file-search" class="w-5 h-5"></i>
+                    <span class="text-[10px] font-medium">Viewer</span>
+                </button>
+                <button onclick="switchTab('chat')" id="tab-chat" class="tab-btn flex flex-col items-center justify-center w-16 h-16 rounded-xl gap-1 transition-all">
+                    <i data-lucide="message-square" class="w-5 h-5"></i>
+                    <span class="text-[10px] font-medium">Chat</span>
+                </button>
+                <button onclick="switchTab('graph')" id="tab-graph" class="tab-btn flex flex-col items-center justify-center w-16 h-16 rounded-xl gap-1 transition-all">
+                    <i data-lucide="network" class="w-5 h-5"></i>
+                    <span class="text-[10px] font-medium">Graph</span>
+                </button>
+                <button onclick="switchTab('timeline')" id="tab-timeline" class="tab-btn flex flex-col items-center justify-center w-16 h-16 rounded-xl gap-1 transition-all">
+                    <i data-lucide="clock" class="w-5 h-5"></i>
+                    <span class="text-[10px] font-medium">Timeline</span>
+                </button>
+                <button onclick="switchTab('lifestyle')" id="tab-lifestyle" class="tab-btn flex flex-col items-center justify-center w-16 h-16 rounded-xl gap-1 transition-all">
+                    <i data-lucide="heart-pulse" class="w-5 h-5"></i>
+                    <span class="text-[10px] font-medium text-center leading-tight">Action<br>Plan</span>
+                </button>
+            </nav>
+
+            <!-- Tab Contents -->
+            <div class="flex-1 relative overflow-hidden bg-slate-100/50">
+                <!-- Viewer Tab -->
+                <div id="view-viewer" class="absolute inset-0 overflow-y-auto p-6 flex flex-col items-center">
+                    <div id="doc-viewer-content" class="w-full max-w-4xl">
+                        <div class="text-center text-slate-400 mt-20">
+                            <i data-lucide="search" class="w-12 h-12 mx-auto mb-4 opacity-30"></i>
+                            <p>Upload and select a document to view contents.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Chat Tab -->
+                <div id="view-chat" class="absolute inset-0 hidden flex-col bg-white">
+                    <div id="chat-messages" class="flex-1 overflow-y-auto p-6 space-y-6">
+                        <!-- Welcome message -->
+                        <div class="flex gap-4">
+                            <div class="w-8 h-8 rounded-full bg-medical-100 flex items-center justify-center shrink-0">
+                                <i data-lucide="bot" class="w-5 h-5 text-medical-600"></i>
+                            </div>
+                            <div class="bg-slate-50 border border-slate-100 rounded-2xl rounded-tl-none p-4 text-sm text-slate-700 max-w-[80%] shadow-sm">
+                                Hello, I am MeduLator. Once you run the Multi-Specialist analysis on the left, you can ask me detailed questions about the patient's records. I will cite my sources directly from the uploaded documents.
+                            </div>
+                        </div>
+                    </div>
+                    <div class="p-4 bg-white border-t border-slate-200">
+                        <form onsubmit="handleChatSubmit(event)" class="relative flex items-center">
+                            <input type="text" id="chat-input" placeholder="Ask about diagnoses, medications, or test results..." 
+                                class="w-full pl-4 pr-12 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-medical-500 text-sm">
+                            <button type="submit" class="absolute right-2 p-2 bg-medical-600 text-white rounded-lg hover:bg-medical-700 transition">
+                                <i data-lucide="send" class="w-4 h-4"></i>
+                            </button>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Graph Tab -->
+                <div id="view-graph" class="absolute inset-0 hidden bg-slate-50">
+                    <div id="graph-container"></div>
+                    <div id="graph-placeholder" class="absolute inset-0 flex items-center justify-center text-slate-400 text-sm">
+                        Run analysis to generate symptom relationship graph.
+                    </div>
+                </div>
+
+                <!-- Timeline Tab -->
+                <div id="view-timeline" class="absolute inset-0 hidden overflow-y-auto p-8 bg-slate-50">
+                    <div class="max-w-2xl mx-auto" id="timeline-container">
+                        <div class="text-center text-slate-400 mt-20">Run analysis to generate medical timeline.</div>
+                    </div>
+                </div>
+
+                <!-- Lifestyle Tab -->
+                <div id="view-lifestyle" class="absolute inset-0 hidden overflow-y-auto p-6 bg-slate-50">
+                    <div class="max-w-4xl mx-auto space-y-6" id="lifestyle-container">
+                        <div class="text-center text-slate-400 mt-20">Run analysis to generate lifestyle action plan.</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <script>
+        // --- State Management ---
+        const state = {
+            apiKey: localStorage.getItem('medulator_api_key') || '',
+            documents: [], // { id, name, textByPage: [{page:1, text:""}], enabled: true }
+            analysisData: null,
+            activeTab: 'viewer',
+            chatHistory: []
+        };
+
+        const md = window.markdownit({ breaks: true });
+        let network = null;
+
+        // --- Initialization ---
+        window.onload = () => {
+            lucide.createIcons();
+            
+            const keyInput = document.getElementById('api-key-input');
+            keyInput.value = state.apiKey;
+            updateApiStatusUI();
+            
+            // Setup PDF.js worker
+            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+        };
+
+        function saveApiKey(key) {
+            state.apiKey = key.trim();
+            localStorage.setItem('medulator_api_key', state.apiKey);
+            updateApiStatusUI();
+        }
+
+        function updateApiStatusUI() {
+            const input = document.getElementById('api-key-input');
+            const status = document.getElementById('api-status');
+            input.classList.remove('api-glow-red', 'api-glow-green');
+            
+            if (state.apiKey.length > 20) {
+                input.classList.add('api-glow-green');
+                status.classList.remove('bg-slate-300', 'bg-red-500');
+                status.classList.add('bg-green-500');
+            } else if (state.apiKey.length > 0) {
+                input.classList.add('api-glow-red');
+                status.classList.remove('bg-slate-300', 'bg-green-500');
+                status.classList.add('bg-red-500');
+            } else {
+                status.classList.remove('bg-green-500', 'bg-red-500');
+                status.classList.add('bg-slate-300');
+            }
+        }
+
+        function switchTab(tabId) {
+            state.activeTab = tabId;
+            ['viewer', 'chat', 'graph', 'timeline', 'lifestyle'].forEach(t => {
+                const btn = document.getElementById(`tab-${t}`);
+                const view = document.getElementById(`view-${t}`);
+                
+                if (t === tabId) {
+                    btn.classList.add('tab-active');
+                    view.classList.remove('hidden');
+                    if (t === 'chat') view.classList.add('flex');
+                } else {
+                    btn.classList.remove('tab-active');
+                    view.classList.add('hidden');
+                    if (t === 'chat') view.classList.remove('flex');
+                }
+            });
+            
+            if(tabId === 'graph' && network) {
+                network.fit(); // Readjust graph canvas
+            }
+        }
+
+        // --- Document Handling ---
+        async function handleFileUpload(event) {
+            const files = event.target.files;
+            if (!files.length) return;
+
+            for (let file of files) {
+                const id = 'doc_' + Math.random().toString(36).substr(2, 9);
+                const docObj = { id, name: file.name, enabled: true, textByPage: [] };
+                
+                try {
+                    if (file.name.toLowerCase().endsWith('.pdf')) {
+                        const arrayBuffer = await file.arrayBuffer();
+                        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                        for (let i = 1; i <= pdf.numPages; i++) {
+                            const page = await pdf.getPage(i);
+                            const textContent = await page.getTextContent();
+                            const text = textContent.items.map(item => item.str).join(' ');
+                            docObj.textByPage.push({ page: i, text });
+                        }
+                    } else if (file.name.toLowerCase().endsWith('.txt')) {
+                        const text = await file.text();
+                        // Split txt into simulated pages by line breaks or just chunk it
+                        const chunks = text.match(/[\s\S]{1,3000}/g) || [];
+                        chunks.forEach((chunk, i) => {
+                            docObj.textByPage.push({ page: i + 1, text: chunk });
+                        });
+                    } else {
+                        alert(`Unsupported file format: ${file.name}`);
+                        continue;
+                    }
+                    state.documents.push(docObj);
+                } catch (e) {
+                    console.error("Error parsing file", file.name, e);
+                    alert(`Failed to parse ${file.name}`);
+                }
+            }
+            renderDocumentList();
+            event.target.value = ''; // Reset input
+        }
+
+        function toggleDocument(id) {
+            const doc = state.documents.find(d => d.id === id);
+            if (doc) doc.enabled = !doc.enabled;
+            renderDocumentList();
+        }
+
+        function deleteDocument(id) {
+            state.documents = state.documents.filter(d => d.id !== id);
+            renderDocumentList();
+        }
+
+        function renderDocumentList() {
+            const listEl = document.getElementById('document-list');
+            if (state.documents.length === 0) {
+                listEl.innerHTML = `
+                    <div class="text-center text-slate-400 text-sm mt-10 px-4">
+                        <i data-lucide="file-question" class="w-8 h-8 mx-auto mb-2 opacity-50"></i>
+                        No documents uploaded yet.
+                    </div>`;
+                document.getElementById('doc-count').innerText = "0 Documents";
+                document.getElementById('page-count').innerText = "0 Pages";
+                return;
+            }
+
+            listEl.innerHTML = '';
+            let totalPages = 0;
+
+            state.documents.forEach(doc => {
+                totalPages += doc.textByPage.length;
+                const div = document.createElement('div');
+                div.className = `flex items-center justify-between p-3 mb-2 rounded-lg border ${doc.enabled ? 'bg-white border-slate-200 shadow-sm' : 'bg-slate-50 border-slate-100 opacity-60'} cursor-pointer transition-all hover:border-medical-300 group`;
+                div.innerHTML = `
+                    <div class="flex items-center gap-3 overflow-hidden" onclick="viewDocument('${doc.id}')">
+                        <input type="checkbox" ${doc.enabled ? 'checked' : ''} onchange="toggleDocument('${doc.id}'); event.stopPropagation();" class="w-4 h-4 text-medical-600 rounded border-slate-300 focus:ring-medical-500">
+                        <i data-lucide="${doc.name.endsWith('.pdf') ? 'file-text' : 'file'}" class="w-4 h-4 text-slate-400 shrink-0"></i>
+                        <div class="truncate">
+                            <p class="text-sm font-medium text-slate-700 truncate" title="${doc.name}">${doc.name}</p>
+                            <p class="text-[10px] text-slate-400">${doc.textByPage.length} pages</p>
+                        </div>
+                    </div>
+                    <button onclick="deleteDocument('${doc.id}')" class="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <i data-lucide="trash-2" class="w-4 h-4"></i>
+                    </button>
+                `;
+                listEl.appendChild(div);
+            });
+
+            document.getElementById('doc-count').innerText = `${state.documents.length} Document${state.documents.length>1?'s':''}`;
+            document.getElementById('page-count').innerText = `${totalPages} Page${totalPages>1?'s':''}`;
+            lucide.createIcons();
+        }
+
+        // --- Document Viewer ---
+        function viewDocument(docId, highlightText = null, pageNum = null) {
+            switchTab('viewer');
+            const doc = state.documents.find(d => d.id === docId);
+            if (!doc) return;
+
+            const container = document.getElementById('doc-viewer-content');
+            container.innerHTML = `<h2 class="text-lg font-bold mb-4 sticky top-0 bg-slate-100/90 py-2 z-10 backdrop-blur">${doc.name}</h2>`;
+
+            doc.textByPage.forEach(p => {
+                const pageDiv = document.createElement('div');
+                pageDiv.className = 'doc-page';
+                pageDiv.id = `page-${doc.id}-${p.page}`;
+                
+                let htmlText = p.text.replace(/\n/g, '<br>');
+                
+                // Extremely simple highlight logic (first exact match)
+                if (highlightText && (pageNum === null || pageNum === p.page)) {
+                    // Try to highlight snippets safely
+                    const safeHighlight = highlightText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    const regex = new RegExp(`(${safeHighlight})`, 'gi');
+                    htmlText = htmlText.replace(regex, '<mark>$1</mark>');
+                }
+
+                pageDiv.innerHTML = `
+                    <div class="absolute top-2 right-4 text-xs text-slate-300">Page ${p.page}</div>
+                    ${htmlText || '<span class="text-slate-300 italic">No text extracted on this page.</span>'}
+                `;
+                container.appendChild(pageDiv);
+            });
+
+            // Scroll to specific page if requested
+            if (pageNum) {
+                setTimeout(() => {
+                    const targetPage = document.getElementById(`page-${doc.id}-${pageNum}`);
+                    if (targetPage) {
+                        targetPage.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }
+                }, 100);
+            }
+        }
+
+        window.navigateToDoc = (docName, pageNum) => {
+            // Find doc ID by name
+            const doc = state.documents.find(d => d.name === docName);
+            if(doc) {
+                viewDocument(doc.id, null, pageNum);
+            } else {
+                alert(`Document ${docName} not found.`);
+            }
+        };
+
+        // --- Gemini API Call Wrapper ---
+        async function callGeminiJSON(prompt, systemInstruction) {
+            if (!state.apiKey) throw new Error("API Key missing");
+            
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${state.apiKey}`;
+            
+            const payload = {
+                contents: [{ role: "user", parts: [{ text: prompt }] }],
+                systemInstruction: { parts: [{ text: systemInstruction }] },
+                generationConfig: {
+                    responseMimeType: "application/json"
+                }
+            };
+
+            // Retry logic
+            let retries = 3;
+            let delay = 1000;
+            while (retries > 0) {
+                try {
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    
+                    if (!response.ok) {
+                        const errText = await response.text();
+                        throw new Error(`API Error: ${response.status} - ${errText}`);
+                    }
+                    
+                    const data = await response.json();
+                    let rawText = data.candidates[0].content.parts[0].text;
+                    // Clean up potential markdown formatting in JSON response
+                    rawText = rawText.replace(/^```json/mi, '').replace(/```$/m, '').trim();
+                    return JSON.parse(rawText);
+                    
+                } catch (e) {
+                    retries--;
+                    if (retries === 0) throw e;
+                    await new Promise(r => setTimeout(r, delay));
+                    delay *= 2;
+                }
+            }
+        }
+
+        async function callGeminiText(prompt, history = []) {
+             if (!state.apiKey) throw new Error("API Key missing");
+            
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${state.apiKey}`;
+            
+            const contents = history.map(h => ({
+                role: h.role,
+                parts: [{ text: h.text }]
+            }));
+            contents.push({ role: "user", parts: [{ text: prompt }] });
+
+            const payload = {
+                contents: contents,
+                systemInstruction: { parts: [{ text: `You are MeduLator AI, an expert AI medical assistant. You answer questions based ONLY on the provided context documents. You MUST cite your sources for every factual claim. Format citations exactly like this: [DocumentName.pdf, Page X]. Use markdown for formatting.` }] }
+            };
+
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            
+            if (!response.ok) {
+                const errText = await response.text();
+                throw new Error(`API Error: ${response.status} - ${errText}`);
+            }
+            
+            const data = await response.json();
+            return data.candidates[0].content.parts[0].text;
+        }
+
+        // --- Core Analysis Engine ---
+        function getContextText() {
+            let context = "--- PATIENT DOCUMENTS CONTEXT ---\n\n";
+            state.documents.filter(d => d.enabled).forEach(doc => {
+                doc.textByPage.forEach(p => {
+                    context += `DOCUMENT: ${doc.name} | PAGE: ${p.page}\n`;
+                    context += p.text + "\n\n";
+                });
+            });
+            return context;
+        }
+
+        async function runAnalysis() {
+            const enabledDocs = state.documents.filter(d => d.enabled);
+            if (enabledDocs.length === 0) {
+                alert("Please upload and enable at least one document.");
+                return;
+            }
+            if (!state.apiKey) {
+                alert("Please enter a valid Gemini API Key.");
+                document.getElementById('api-key-input').focus();
+                return;
+            }
+
+            document.getElementById('btn-analyze').disabled = true;
+            document.getElementById('analysis-placeholder').classList.add('hidden');
+            document.getElementById('analysis-results').classList.add('hidden');
+            document.getElementById('analysis-loading').classList.remove('hidden');
+            
+            const context = getContextText();
+
+            const systemPrompt = `You are MeduLator AI, a multidisciplinary clinical review simulation. 
+Analyze the provided medical documents. Your task is to output a comprehensive JSON response adhering strictly to the schema requested.
+CRITICAL RULE: EVERY clinical claim, diagnosis, observation, or recommendation MUST include a citation object referencing the specific document name and page number. 
+If an exact page is unknown, use 1. Do not invent facts.
+
+JSON SCHEMA:
+{
+  "snapshot": {
+    "diagnoses": [{"name": "string", "source": {"doc": "string", "page": number}}],
+    "medications": [{"name": "string", "source": {"doc": "string", "page": number}}]
+  },
+  "specialists": [
+    {
+      "role": "General Practitioner | Internal Medicine | Pharmacist | Radiologist | Risk Analyst",
+      "observations": [{"text": "string", "source": {"doc": "string", "page": number}}],
+      "concerns": [{"text": "string", "source": {"doc": "string", "page": number}}],
+      "confidence": "High | Moderate | Low"
+    }
+  ],
+  "consensus": {
+    "agreed": ["string"],
+    "riskLevel": "Low | Moderate | High",
+    "riskDetails": ["string"]
+  },
+  "timeline": [
+    { "year": "YYYY", "event": "string", "source": {"doc": "string", "page": number} }
+  ],
+  "graph": {
+    "nodes": [ {"id": "n1", "label": "string", "group": "diagnosis | symptom | medication | lab"} ],
+    "edges": [ {"from": "n1", "to": "n2", "label": "string"} ]
+  },
+  "lifestyle": [
+    {
+      "category": "Nutrition | Physical Activity | Sleep | Monitoring",
+      "advice": [{"text": "string", "source": {"doc": "string", "page": number}}],
+      "actionCard": { "title": "string", "reason": "string", "urgency": "Low | Medium | High" }
+    }
+  ]
+}`;
+
+            const prompt = `${context}\n\nPerform the full multidisciplinary analysis and output the required JSON. Ensure citations exist for facts. Generate a detailed symptom relationship graph with multiple connected nodes. Extract all actionable lifestyle and monitoring steps for the agentic planner.`;
+
+            try {
+                const data = await callGeminiJSON(prompt, systemPrompt);
+                state.analysisData = data;
+                renderAnalysisUI();
+                renderGraph();
+                renderTimeline();
+                renderLifestyle();
+                
+                // Add initial context to chat history secretly
+                state.chatHistory = [{
+                    role: "user",
+                    text: `Here are the documents for this session:\n${context}\n\nAcknowledge and wait for my questions.`
+                }, {
+                    role: "model",
+                    text: "I have reviewed the documents and am ready to answer your questions with citations."
+                }];
+
+            } catch (err) {
+                console.error(err);
+                alert("Analysis failed. Please check your API key and try again.\n" + err.message);
+                document.getElementById('analysis-placeholder').classList.remove('hidden');
+            } finally {
+                document.getElementById('analysis-loading').classList.add('hidden');
+                document.getElementById('btn-analyze').disabled = false;
+            }
+        }
+
+        function createCitationBadge(source) {
+            if (!source || !source.doc) return '';
+            return `<span class="citation-badge" title="Source: ${source.doc}, Page ${source.page}" onclick="navigateToDoc('${source.doc}', ${source.page})">📄 ${source.page}</span>`;
+        }
+
+        function renderAnalysisUI() {
+            const data = state.analysisData;
+            const container = document.getElementById('analysis-results');
+            container.classList.remove('hidden');
+
+            // 1. Snapshot
+            let snapHtml = `
+                <div><span class="text-xs font-semibold text-slate-500">Diagnoses:</span><br>
+                ${data.snapshot.diagnoses.map(d => `<span class="inline-block bg-blue-50 text-blue-700 px-2 py-1 rounded text-xs mr-1 mb-1 border border-blue-100">${d.name} ${createCitationBadge(d.source)}</span>`).join('')}</div>
+                <div class="mt-2"><span class="text-xs font-semibold text-slate-500">Medications:</span><br>
+                ${data.snapshot.medications.map(m => `<span class="inline-block bg-purple-50 text-purple-700 px-2 py-1 rounded text-xs mr-1 mb-1 border border-purple-100">${m.name} ${createCitationBadge(m.source)}</span>`).join('')}</div>
+            `;
+            document.getElementById('panel-snapshot').innerHTML = snapHtml;
+
+            // 2. Risk Overview
+            const riskColors = {
+                'Low': 'bg-green-100 text-green-800 border-green-200',
+                'Moderate': 'bg-yellow-100 text-yellow-800 border-yellow-200',
+                'High': 'bg-red-100 text-red-800 border-red-200'
+            };
+            const rc = riskColors[data.consensus.riskLevel] || riskColors['Moderate'];
+            document.getElementById('panel-risk').innerHTML = `
+                <div class="flex justify-between items-center mb-2">
+                    <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider">Clinical Risk</h3>
+                    <span class="px-2 py-1 rounded text-xs font-bold border ${rc}">${data.consensus.riskLevel}</span>
+                </div>
+                <ul class="text-sm text-slate-600 list-disc pl-4 space-y-1">
+                    ${data.consensus.riskDetails.map(r => `<li>${r}</li>`).join('')}
+                </ul>
+            `;
+
+            // 3. Specialists
+            const icons = {
+                'General Practitioner': 'stethoscope',
+                'Internal Medicine': 'activity',
+                'Pharmacist': 'pill',
+                'Radiologist': 'scan',
+                'Risk Analyst': 'alert-triangle'
+            };
+            let specHtml = '';
+            data.specialists.forEach(spec => {
+                const icon = icons[spec.role] || 'user';
+                specHtml += `
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                    <div class="bg-slate-50 px-3 py-2 border-b border-slate-100 flex justify-between items-center cursor-pointer hover:bg-slate-100" onclick="this.nextElementSibling.classList.toggle('hidden')">
+                        <div class="flex items-center gap-2">
+                            <i data-lucide="${icon}" class="w-4 h-4 text-medical-600"></i>
+                            <span class="text-sm font-semibold text-slate-700">${spec.role}</span>
+                        </div>
+                        <span class="text-[10px] uppercase font-bold text-slate-400">Conf: ${spec.confidence}</span>
+                    </div>
+                    <div class="p-3 space-y-3 hidden">
+                        <div>
+                            <h4 class="text-xs font-semibold text-slate-500 mb-1">Key Observations</h4>
+                            <ul class="text-sm text-slate-600 space-y-1">
+                                ${spec.observations.map(o => `<li>• ${o.text} ${createCitationBadge(o.source)}</li>`).join('')}
+                            </ul>
+                        </div>
+                        ${spec.concerns.length > 0 ? `
+                        <div>
+                            <h4 class="text-xs font-semibold text-rose-500 mb-1">Concerns</h4>
+                            <ul class="text-sm text-slate-600 space-y-1">
+                                ${spec.concerns.map(c => `<li>• ${c.text} ${createCitationBadge(c.source)}</li>`).join('')}
+                            </ul>
+                        </div>` : ''}
+                    </div>
+                </div>`;
+            });
+            document.getElementById('panel-specialists').innerHTML = specHtml;
+
+            // 4. Consensus
+            document.getElementById('panel-consensus').innerHTML = `
+                <ul class="list-disc pl-4 space-y-1">
+                    ${data.consensus.agreed.map(a => `<li>${a}</li>`).join('')}
+                </ul>
+            `;
+
+            lucide.createIcons();
+        }
+
+        // --- Visualization Renderers ---
+        function renderGraph() {
+            const data = state.analysisData.graph;
+            if (!data || !data.nodes) return;
+
+            document.getElementById('graph-placeholder').classList.add('hidden');
+            
+            const colors = {
+                diagnosis: { background: '#fecaca', border: '#ef4444' }, // Red
+                symptom: { background: '#fef08a', border: '#eab308' },   // Yellow
+                medication: { background: '#e9d5ff', border: '#a855f7' },// Purple
+                lab: { background: '#bae6fd', border: '#0ea5e9' }        // Blue
+            };
+
+            const nodes = new vis.DataSet(data.nodes.map(n => ({
+                id: n.id,
+                label: n.label,
+                shape: 'box',
+                color: colors[n.group] || { background: '#e2e8f0', border: '#94a3b8' },
+                font: { face: 'Inter, sans-serif', size: 14 }
+            })));
+
+            const edges = new vis.DataSet(data.edges.map(e => ({
+                from: e.from,
+                to: e.to,
+                label: e.label,
+                font: { align: 'middle', size: 10, face: 'Inter, sans-serif' },
+                arrows: 'to',
+                color: { color: '#94a3b8' }
+            })));
+
+            const container = document.getElementById('graph-container');
+            const graphData = { nodes, edges };
+            const options = {
+                physics: { stabilization: true, barnesHut: { springLength: 150 } },
+                interaction: { hover: true, zoomView: true, dragView: true }
+            };
+
+            if (network) network.destroy();
+            network = new vis.Network(container, graphData, options);
+        }
+
+        function renderTimeline() {
+            const tl = state.analysisData.timeline;
+            const container = document.getElementById('timeline-container');
+            if (!tl || tl.length === 0) {
+                container.innerHTML = `<div class="text-center text-slate-400 mt-20">No chronological events found.</div>`;
+                return;
+            }
+
+            // Sort by year
+            tl.sort((a, b) => parseInt(a.year) - parseInt(b.year));
+
+            let html = '<div class="relative border-l-2 border-medical-200 ml-4 md:ml-0 md:pl-0">';
+            tl.forEach((item, idx) => {
+                html += `
+                <div class="mb-8 ml-6 relative group">
+                    <div class="absolute -left-[33px] top-1 w-4 h-4 bg-white border-2 border-medical-500 rounded-full group-hover:bg-medical-500 transition-colors"></div>
+                    <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-100 hover:border-medical-200 transition-all">
+                        <span class="text-xs font-bold text-medical-600 bg-medical-50 px-2 py-1 rounded">${item.year}</span>
+                        <h3 class="text-sm font-semibold text-slate-800 mt-2">${item.event}</h3>
+                        <div class="mt-2 text-right">
+                            ${createCitationBadge(item.source)}
+                        </div>
+                    </div>
+                </div>`;
+            });
+            html += '</div>';
+            container.innerHTML = html;
+        }
+
+        function getCalendarLink(title, details) {
+            const now = new Date();
+            now.setDate(now.getDate() + 14); // Set generic reminder 2 weeks from now
+            const startStr = now.toISOString().replace(/-|:|\.\d\d\d/g, '');
+            const endStr = new Date(now.getTime() + 3600000).toISOString().replace(/-|:|\.\d\d\d/g, ''); 
+            return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(title)}&details=${encodeURIComponent(details)}&dates=${startStr}/${endStr}`;
+        }
+
+        function renderLifestyle() {
+            const ls = state.analysisData.lifestyle;
+            const container = document.getElementById('lifestyle-container');
+            if (!ls || ls.length === 0) return;
+
+            let html = '<div class="grid grid-cols-1 md:grid-cols-2 gap-6">';
+            
+            ls.forEach(cat => {
+                const urgencyColors = {
+                    'High': 'text-rose-600 bg-rose-50 border-rose-200',
+                    'Medium': 'text-amber-600 bg-amber-50 border-amber-200',
+                    'Low': 'text-emerald-600 bg-emerald-50 border-emerald-200'
+                };
+                const uc = urgencyColors[cat.actionCard?.urgency] || urgencyColors['Medium'];
+
+                html += `
+                <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+                    <div class="bg-slate-50 p-4 border-b border-slate-100 flex items-center gap-3">
+                        <div class="p-2 bg-white rounded-lg shadow-sm">
+                            <i data-lucide="${cat.category === 'Nutrition' ? 'apple' : cat.category === 'Sleep' ? 'moon' : cat.category === 'Physical Activity' ? 'activity' : 'calendar-clock'}" class="w-5 h-5 text-medical-500"></i>
+                        </div>
+                        <h3 class="font-bold text-slate-800">${cat.category}</h3>
+                    </div>
+                    
+                    <div class="p-4 flex-1">
+                        <ul class="space-y-2 text-sm text-slate-600 mb-6">
+                            ${cat.advice.map(a => `<li>• ${a.text} ${createCitationBadge(a.source)}</li>`).join('')}
+                        </ul>
+                        
+                        ${cat.actionCard ? `
+                        <div class="mt-auto bg-slate-50 border border-slate-200 rounded-xl p-3 relative">
+                            <div class="absolute -top-2.5 right-3 px-2 py-0.5 text-[10px] font-bold rounded-full border uppercase ${uc}">
+                                ${cat.actionCard.urgency} Priority
+                            </div>
+                            <h4 class="text-sm font-semibold text-slate-800 flex items-start gap-2">
+                                <i data-lucide="check-circle-2" class="w-4 h-4 text-medical-600 mt-0.5 shrink-0"></i>
+                                ${cat.actionCard.title}
+                            </h4>
+                            <p class="text-xs text-slate-500 mt-1 ml-6">${cat.actionCard.reason}</p>
+                            
+                            <a href="${getCalendarLink(cat.actionCard.title, cat.actionCard.reason)}" target="_blank" class="mt-3 ml-6 inline-flex items-center gap-1.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded-md transition-colors shadow-sm">
+                                <i data-lucide="calendar-plus" class="w-3.5 h-3.5"></i> Add to Calendar
+                            </a>
+                        </div>
+                        ` : ''}
+                    </div>
+                </div>`;
+            });
+            
+            html += '</div>';
+            container.innerHTML = html;
+            lucide.createIcons();
+        }
+
+        // --- Chat Interaction ---
+        function formatChatResponse(text) {
+            // Convert standard markdown to HTML
+            let html = md.render(text);
+            // Post-process citations like [DocumentName.pdf, Page X]
+            html = html.replace(/\[([^\]]+?),\s*Page\s*(\d+)\]/gi, (match, doc, page) => {
+                return `<span class="citation-badge" onclick="navigateToDoc('${doc.trim()}', ${page})">📄 ${doc.trim()} p.${page}</span>`;
+            });
+            return html;
+        }
+
+        async function handleChatSubmit(e) {
+            e.preventDefault();
+            const input = document.getElementById('chat-input');
+            const msg = input.value.trim();
+            if (!msg) return;
+
+            input.value = '';
+            appendChatMessage('user', msg);
+
+            // Add typing indicator
+            const chatContainer = document.getElementById('chat-messages');
+            const loaderDiv = document.createElement('div');
+            loaderDiv.className = 'flex gap-4';
+            loaderDiv.innerHTML = `
+                <div class="w-8 h-8 rounded-full bg-medical-100 flex items-center justify-center shrink-0">
+                    <i data-lucide="bot" class="w-5 h-5 text-medical-600"></i>
+                </div>
+                <div class="bg-slate-50 border border-slate-100 rounded-2xl rounded-tl-none p-4 shadow-sm flex items-center gap-1">
+                    <span class="w-2 h-2 bg-medical-300 rounded-full animate-bounce" style="animation-delay: 0ms"></span>
+                    <span class="w-2 h-2 bg-medical-300 rounded-full animate-bounce" style="animation-delay: 150ms"></span>
+                    <span class="w-2 h-2 bg-medical-300 rounded-full animate-bounce" style="animation-delay: 300ms"></span>
+                </div>
+            `;
+            chatContainer.appendChild(loaderDiv);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+            lucide.createIcons();
+
+            try {
+                const responseText = await callGeminiText(msg, state.chatHistory);
+                
+                // Update history
+                state.chatHistory.push({ role: "user", text: msg });
+                state.chatHistory.push({ role: "model", text: responseText });
+
+                chatContainer.removeChild(loaderDiv);
+                appendChatMessage('model', responseText);
+            } catch (err) {
+                chatContainer.removeChild(loaderDiv);
+                appendChatMessage('model', `**Error:** Failed to get response. ${err.message}`);
+            }
+        }
+
+        function appendChatMessage(role, text) {
+            const container = document.getElementById('chat-messages');
+            const div = document.createElement('div');
+            div.className = 'flex gap-4 ' + (role === 'user' ? 'flex-row-reverse' : '');
+            
+            const iconHtml = role === 'user' 
+                ? `<div class="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center shrink-0"><i data-lucide="user" class="w-5 h-5 text-slate-600"></i></div>`
+                : `<div class="w-8 h-8 rounded-full bg-medical-100 flex items-center justify-center shrink-0"><i data-lucide="bot" class="w-5 h-5 text-medical-600"></i></div>`;
+            
+            const bgClass = role === 'user' ? 'bg-medical-600 text-white rounded-tr-none border-medical-700' : 'bg-slate-50 text-slate-800 rounded-tl-none border-slate-100 prose prose-sm max-w-none';
+            
+            div.innerHTML = `
+                ${iconHtml}
+                <div class="border rounded-2xl p-4 shadow-sm max-w-[80%] ${bgClass}">
+                    ${role === 'user' ? text : formatChatResponse(text)}
+                </div>
+            `;
+            container.appendChild(div);
+            container.scrollTop = container.scrollHeight;
+            lucide.createIcons();
+        }
+
+    </script>
+</body>
+</html>
