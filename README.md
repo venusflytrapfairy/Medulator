@@ -207,7 +207,7 @@ This makes medical document interpretation more transparent, explainable, and an
 I am actively collecting feedback from healthcare practitioners regarding usability, interpretability, and clinical relevance.
 
 👉 Feedback Form:  
-**[Google Form Link Placeholder]**
+**https://forms.gle/jbuN3bQsM8xTmRpE7**
 
 I  especially welcome input on:
 - Clinical usefulness of multi-specialist perspectives  
